@@ -1,0 +1,21 @@
+# Node modules
+**/node_modules/
+
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# AWS SAM build artifacts
+.build/
+.aws-sam/
+
+# Local environment variables
+.env
+
+# MacOS specific files
+.DS_Store
+
+# Windows specific files
+Thumbs.db

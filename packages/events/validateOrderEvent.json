@@ -1,0 +1,14 @@
+{
+    "orderId": "12345",
+    "items": [
+      {
+        "itemId": "burger001",
+        "quantity": 2
+      }
+    ],
+    "customer": {
+      "customerId": "customer001",
+      "name": "John Doe"
+    }
+  }
+  

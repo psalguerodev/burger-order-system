@@ -1,0 +1,125 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Resources:
+  # API Gateway para recibir las órdenes
+  BurgerOrderApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: BurgerOrderApi
+      StageName: Prod
+
+  # Lambda para validar la orden
+  ValidateOrderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: validateOrder.handler
+      CodeUri: ../lambda-functions/
+      Runtime: nodejs18.x
+      MemorySize: 128
+      Timeout: 10
+      Environment:
+        Variables:
+          EVENT_BUS_NAME: !Ref BurgerOrderEventBus
+      Events:
+        ValidateOrderApi:
+          Type: Api
+          Properties:
+            Path: /validate-order
+            Method: post
+            RestApiId: !Ref BurgerOrderApi
+
+  # Lambda para procesar la orden
+  ProcessOrderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: processOrder.handler
+      CodeUri: ../lambda-functions/
+      Runtime: nodejs18.x
+      MemorySize: 128
+      Timeout: 10
+      Environment:
+        Variables:
+          EVENT_BUS_NAME: !Ref BurgerOrderEventBus
+
+  # Lambda para validar inventario
+  CheckInventoryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: checkInventory.handler
+      CodeUri: ../lambda-functions/
+      Runtime: nodejs18.x
+      MemorySize: 128
+      Timeout: 10
+
+  # Lambda para preparar la orden
+  PrepareOrderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: prepareOrder.handler
+      CodeUri: ../lambda-functions/
+      Runtime: nodejs18.x
+      MemorySize: 128
+      Timeout: 10
+
+  # Lambda para gestión de envíos
+  ManageShippingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: manageShipping.handler
+      CodeUri: ../lambda-functions/
+      Runtime: nodejs18.x
+      MemorySize: 128
+      Timeout: 10
+
+  # Lambda para notificar al usuario
+  NotifyUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: notifyUser.handler
+      CodeUri: ../lambda-functions/
+      Runtime: nodejs18.x
+      MemorySize: 128
+      Timeout: 10
+
+  # Lambda para log de errores
+  LogErrorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: logError.handler
+      CodeUri: ../lambda-functions/
+      Runtime: nodejs18.x
+      MemorySize: 128
+      Timeout: 10
+
+  # EventBridge para manejar eventos
+  BurgerOrderEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: BurgerOrderEventBus
+
+  # Step Function para manejar el flujo de procesamiento de la orden
+  BurgerOrderStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      DefinitionUri: ../step-functions/stateMachine.asl.json
+      RoleArn: !GetAtt StepFunctionExecutionRole.Arn
+
+  StepFunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: "states.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: "StepFunctionExecutionPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "lambda:InvokeFunction"
+                Resource: "*"
