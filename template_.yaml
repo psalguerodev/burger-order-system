@@ -1,0 +1,146 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Description: 'SAM Template for Processing Burger Orders with EventBridge Integration'
+
+Resources:
+  # DynamoDB Table for Orders
+  OrderTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: 'OrderTable'
+      AttributeDefinitions:
+        - AttributeName: 'OrderId'
+          AttributeType: 'S'
+      KeySchema:
+        - AttributeName: 'OrderId'
+          KeyType: 'HASH'
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  # ValidateOrder Lambda Function
+  ValidateOrderFunction:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: 'index.validateOrder'
+      Runtime: 'nodejs18.x'
+      CodeUri: './src/validateOrder'
+      MemorySize: 128
+      Timeout: 10
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref OrderTable
+      Events:
+        OrderEvent:
+          Type: 'EventBridgeRule'
+          Properties:
+            Pattern:
+              source:
+                - 'burger.order'
+            Targets:
+              - Arn: !GetAtt ValidateOrderFunction.Arn
+                Id: 'ValidateOrderFunctionTarget'
+
+  # CheckInventory Lambda Function
+  CheckInventoryFunction:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: 'index.checkInventory'
+      Runtime: 'nodejs18.x'
+      CodeUri: './src/checkInventory'
+      MemorySize: 128
+      Timeout: 10
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref OrderTable
+
+  # PrepareOrder Lambda Function
+  PrepareOrderFunction:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: 'index.prepareOrder'
+      Runtime: 'nodejs18.x'
+      CodeUri: './src/prepareOrder'
+      MemorySize: 128
+      Timeout: 10
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref OrderTable
+
+  # ManageShipping Lambda Function
+  ManageShippingFunction:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: 'index.manageShipping'
+      Runtime: 'nodejs18.x'
+      CodeUri: './src/manageShipping'
+      MemorySize: 128
+      Timeout: 10
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref OrderTable
+
+  # NotifyUser Lambda Function
+  NotifyUserFunction:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: 'index.notifyUser'
+      Runtime: 'nodejs18.x'
+      CodeUri: './src/notifyUser'
+      MemorySize: 128
+      Timeout: 10
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref OrderTable
+
+  # LogError Lambda Function
+  LogErrorFunction:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: 'index.logError'
+      Runtime: 'nodejs18.x'
+      CodeUri: './src/logError'
+      MemorySize: 128
+      Timeout: 10
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref OrderTable
+
+  # Step Functions State Machine
+  BurgerOrderStateMachine:
+    Type: 'AWS::Serverless::StateMachine'
+    Properties:
+      DefinitionUri: './stateMachineDefinition.json'
+      Role: !GetAtt StateMachineExecutionRole.Arn
+
+  # IAM Role for Step Functions
+  StateMachineExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service: 'states.amazonaws.com'
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: 'StateMachineExecutionPolicy'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action:
+                  - 'dynamodb:PutItem'
+                  - 'dynamodb:GetItem'
+                  - 'dynamodb:UpdateItem'
+                Resource: !GetAtt OrderTable.Arn
+              - Effect: 'Allow'
+                Action: 'lambda:InvokeFunction'
+                Resource:
+                  - !GetAtt ValidateOrderFunction.Arn
+                  - !GetAtt CheckInventoryFunction.Arn
+                  - !GetAtt PrepareOrderFunction.Arn
+                  - !GetAtt ManageShippingFunction.Arn
+                  - !GetAtt NotifyUserFunction.Arn
+                  - !GetAtt LogErrorFunction.Arn

@@ -1,0 +1,239 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Description: 'Template for Burger Order Processing with DynamoDB and Lambda Functions'
+
+Globals:
+  Function:
+    Timeout: 60
+    Runtime: nodejs18.x
+
+Resources:
+  # Error Log Table
+  ErrorLogTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: ErrorLogTable
+      AttributeDefinitions:
+        - AttributeName: OrderId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: OrderId
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  # Inventory Table
+  InventoryTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: InventoryTable
+      AttributeDefinitions:
+        - AttributeName: ItemId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: ItemId
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  # Shipping Table
+  ShippingTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: ShippingTable
+      AttributeDefinitions:
+        - AttributeName: OrderId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: OrderId
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+    
+  OrderTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: 'OrderTable'
+      AttributeDefinitions:
+        - AttributeName: 'OrderId'
+          AttributeType: 'S'
+      KeySchema:
+        - AttributeName: 'OrderId'
+          KeyType: 'HASH'
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  # IAM Role for Step Functions
+  StateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: StateMachineRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSStepFunctionsFullAccess
+
+  # Lambda Functions
+  ValidateOrderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/validateOrder/index.handler
+      CodeUri: src/validateOrder
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: OrderTable
+
+
+  CheckInventoryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/checkInventory/index.handler
+      CodeUri: src/checkInventory
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: InventoryTable
+      Environment:
+        Variables:
+          INVENTORY_TABLE: !Ref InventoryTable
+
+  PrepareOrderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/prepareOrder/index.handler
+      CodeUri: src/prepareOrder
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: ShippingTable
+      Environment:
+        Variables:
+          SHIPPING_TABLE: !Ref ShippingTable
+
+  ManageShippingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/manageShipping/index.handler
+      CodeUri: src/manageShipping
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: ShippingTable
+      Environment:
+        Variables:
+          SHIPPING_TABLE: !Ref ShippingTable
+
+  NotifyUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/notifyUser/index.handler
+      CodeUri: src/notifyUser
+      Environment:
+        Variables:
+          ERROR_LOG_TABLE: !Ref ErrorLogTable
+
+  LogErrorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/logError/index.handler
+      CodeUri: src/logError
+      Environment:
+        Variables:
+          ERROR_LOG_TABLE: !Ref ErrorLogTable
+
+  # State Machine Definition
+  BurgerOrderStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: BurgerOrderStateMachine
+      DefinitionString: !Sub |
+        {
+          "Comment": "State Machine for Processing Burger Orders",
+          "StartAt": "ValidateOrder",
+          "States": {
+            "ValidateOrder": {
+              "Type": "Task",
+              "Resource": "${ValidateOrderFunction.Arn}",
+              "Next": "CheckInventory"
+            },
+            "CheckInventory": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.inventoryStatus",
+                  "StringEquals": "Available",
+                  "Next": "PrepareOrder"
+                },
+                {
+                  "Variable": "$.inventoryStatus",
+                  "StringEquals": "Insufficient",
+                  "Next": "NotifyUserOfStockIssue"
+                }
+              ],
+              "Default": "NotifyUserOfStockIssue"
+            },
+            "PrepareOrder": {
+              "Type": "Task",
+              "Resource": "${PrepareOrderFunction.Arn}",
+              "Next": "ManageShipping"
+            },
+            "ManageShipping": {
+              "Type": "Task",
+              "Resource": "${ManageShippingFunction.Arn}",
+              "Next": "PersistOrder"
+            },
+            "NotifyUserOfStockIssue": {
+              "Type": "Task",
+              "Resource": "${NotifyUserFunction.Arn}",
+              "Next": "LogError"
+            },
+            "LogError": {
+              "Type": "Task",
+              "Resource": "${LogErrorFunction.Arn}",
+              "End": true
+            },
+            "PersistOrder": {
+              "Type": "Task",
+              "Resource": "${ManageShippingFunction.Arn}",
+              "End": true
+            }
+          }
+        }
+      RoleArn: !GetAtt StateMachineRole.Arn
+
+Outputs:
+  ValidateOrderFunctionArn:
+    Description: "ARN of the ValidateOrder Lambda function"
+    Value: !GetAtt ValidateOrderFunction.Arn
+
+  CheckInventoryFunctionArn:
+    Description: "ARN of the CheckInventory Lambda function"
+    Value: !GetAtt CheckInventoryFunction.Arn
+
+  PrepareOrderFunctionArn:
+    Description: "ARN of the PrepareOrder Lambda function"
+    Value: !GetAtt PrepareOrderFunction.Arn
+
+  ManageShippingFunctionArn:
+    Description: "ARN of the ManageShipping Lambda function"
+    Value: !GetAtt ManageShippingFunction.Arn
+
+  NotifyUserFunctionArn:
+    Description: "ARN of the NotifyUser Lambda function"
+    Value: !GetAtt NotifyUserFunction.Arn
+
+  LogErrorFunctionArn:
+    Description: "ARN of the LogError Lambda function"
+    Value: !GetAtt LogErrorFunction.Arn
+
+  BurgerOrderStateMachineArn:
+    Description: "ARN of the BurgerOrder State Machine"
+    Value: !GetAtt BurgerOrderStateMachine.Arn

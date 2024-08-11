@@ -1,0 +1,5 @@
+{
+  "orderId": "12345",
+  "userEmail": "user@example.com",
+  "message": "We encountered an issue with your order due to insufficient inventory. Please contact support for more information."
+}

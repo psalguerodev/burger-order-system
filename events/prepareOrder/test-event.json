@@ -1,0 +1,17 @@
+{
+  "orderId": "12345",
+  "orderDetails": {
+    "items": [
+      {
+        "itemId": "item1",
+        "quantity": 2
+      },
+      {
+        "itemId": "item2",
+        "quantity": 1
+      }
+    ],
+    "totalPrice": 29.99
+  },
+  "inventoryStatus": "Available"
+}
