@@ -1,4 +1,4 @@
-AWSTemplateFormatVersion: '2010-09-09'
+AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Resources:
   # API Gateway para recibir las órdenes
@@ -7,6 +7,21 @@ Resources:
     Properties:
       Name: BurgerOrderApi
       StageName: Prod
+
+  # DynamoDB para almacenar las órdenes
+  OrdersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: OrdersTable
+      AttributeDefinitions:
+        - AttributeName: orderId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: orderId
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
 
   # Lambda para validar la orden
   ValidateOrderFunction:
@@ -60,6 +75,9 @@ Resources:
       Runtime: nodejs18.x
       MemorySize: 128
       Timeout: 10
+      Environment:
+        Variables:
+          DYNAMODB_TABLE_NAME: OrdersTable
 
   # Lambda para gestión de envíos
   ManageShippingFunction:
@@ -70,6 +88,10 @@ Resources:
       Runtime: nodejs18.x
       MemorySize: 128
       Timeout: 10
+      Environment:
+        Variables:
+          DYNAMODB_TABLE_NAME: OrdersTable
+          SNS_TOPIC_ARN: !Ref ShippingNotificationTopic
 
   # Lambda para notificar al usuario
   NotifyUserFunction:
@@ -80,6 +102,9 @@ Resources:
       Runtime: nodejs18.x
       MemorySize: 128
       Timeout: 10
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !Ref UserNotificationTopic
 
   # Lambda para log de errores
   LogErrorFunction:
@@ -90,12 +115,41 @@ Resources:
       Runtime: nodejs18.x
       MemorySize: 128
       Timeout: 10
+      Environment:
+        Variables:
+          LOG_GROUP_NAME: !Ref ErrorLogGroup
+          LOG_STREAM_NAME: !Ref ErrorLogStream
 
   # EventBridge para manejar eventos
   BurgerOrderEventBus:
     Type: AWS::Events::EventBus
     Properties:
       Name: BurgerOrderEventBus
+
+  ShippingNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: ShippingNotificationTopic
+
+  UserNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: UserNotificationTopic
+
+  
+  # CloudWatch Logs Group para errores
+  ErrorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/LogErrorFunction
+      RetentionInDays: 7
+
+  # CloudWatch Logs Stream para errores
+  ErrorLogStream:
+    Type: AWS::Logs::LogStream
+    Properties:
+      LogGroupName: !Ref ErrorLogGroup
+      LogStreamName: ErrorStream
 
   # Step Function para manejar el flujo de procesamiento de la orden
   BurgerOrderStateMachine:
